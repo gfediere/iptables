@@ -24,15 +24,24 @@ property :variables, Hash, default: {}
 property :lines, String
 property :table, Symbol
 
+def sync_resources?(src, dst)
+  resources_present = src.all? { |rule| dst.include?(rule)}
+  if !resources_present
+    return true
+  end
+  false
+end
+
 action :enable do
   # ensure we have execute[rebuild-iptables] in the outer run_context
   with_run_context :root do
     find_resource(:execute, 'rebuild-iptables') do
-      command '/usr/sbin/rebuild-iptables'
+      command '/sbin/rebuild-iptables'
       action :nothing
     end
   end
 
+  rules_persisted = ::File.open(node['iptables']['persisted_rules']).readlines.map(&:chomp)
   if new_resource.lines.nil?
     template "/etc/iptables.d/#{new_resource.name}" do
       source new_resource.source ? new_resource.source : "#{new_resource.name}.erb"
@@ -42,6 +51,14 @@ action :enable do
       backup false
       notifies :run, 'execute[rebuild-iptables]', :delayed
     end
+    # All resources are present in persisted file
+    if ::File.exist?("/etc/iptables.d/#{new_resource.name}")
+      rules_source = ::File.open("/etc/iptables.d/#{new_resource.name}").readlines.map(&:chomp)
+      log 'Sync rules' do
+        notifies :run, 'execute[rebuild-iptables]', :delayed
+        only_if { sync_resources?(rules_source, rules_persisted) && node['iptables']['sync_rules'] }
+      end
+    end
   else
     new_resource.lines = "*#{new_resource.table}\n" + new_resource.lines if new_resource.table
     file "/etc/iptables.d/#{new_resource.name}" do
@@ -49,6 +66,11 @@ action :enable do
       mode '0644'
       backup false
       notifies :run, 'execute[rebuild-iptables]', :delayed
+    end
+    # All resources are present in persisted file
+    log 'Sync rules' do
+      notifies :run, 'execute[rebuild-iptables]', :delayed
+      only_if { sync_resources?(new_resource.lines.split("\n"), rules_persisted) && node['iptables']['sync_rules'] }
     end
   end
 end
@@ -66,5 +88,16 @@ action :disable do
     action :delete
     backup false
     notifies :run, 'execute[rebuild-iptables]', :delayed
+  end
+end
+
+action :sync do
+  persisted_rules = IPTables::Tables.new(::File.readlines(node['iptables']['persisted_rules'])).filter
+  active_rules = IPTables::Tables.new(::File.readlines(node['iptables']['saved_rules'])).filter
+  active_are_persisted = active_rules.all? { |rule| persisted_rules.include?(rule)}
+  persisted_are_active = persisted_rules.all? { |rule| active_rules.include?(rule)}
+  log 'Sync rules' do
+    notifies :run, 'execute[rebuild-iptables]', :delayed
+    only_if { !active_are_persisted || !persisted_are_active }
   end
 end

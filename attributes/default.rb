@@ -45,3 +45,5 @@ when 'rhel', 'fedora', 'amazon'
 when 'debian'
   default['iptables']['persisted_rules'] = '/etc/iptables/rules.v4'
 end
+default['iptables']['sync_rules'] = true
+default['iptables']['saved_rules'] = '/etc/iptables.d/iptables-save'

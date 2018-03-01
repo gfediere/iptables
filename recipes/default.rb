@@ -64,3 +64,22 @@ if platform_family?('rhel', 'fedora', 'amazon')
     not_if { platform_family?('fedora') }
   end
 end
+
+if node['iptables']['sync_rules']
+  saved_rules = node['iptables']['saved_rules']
+  with_run_context :root do
+    execute 'iptables-save' do
+      command "/sbin/iptables-save > #{saved_rules}"
+      action :nothing
+    end
+  end
+
+  file saved_rules do
+    action :create
+    notifies :run, 'execute[iptables-save]', :immediately
+  end
+
+  iptables_rule 'Synchornize' do
+    action :sync
+  end
+end
