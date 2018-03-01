@@ -39,3 +39,9 @@ default['iptables']['ip6tables_sysconfig'] = {
 }
 
 default['iptables']['system_ruby'] = '/usr/bin/ruby'
+case node['platform_family']
+when 'rhel', 'fedora', 'amazon'
+  default['iptables']['persisted_rules'] = '/etc/sysconfig/iptables'
+when 'debian'
+  default['iptables']['persisted_rules'] = '/etc/iptables/rules.v4'
+end
